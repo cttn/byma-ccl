@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os, json, logging, io
+import os, json, logging, io, asyncio
 from datetime import datetime
 from pathlib import Path
 
@@ -376,7 +376,7 @@ async def cmd_cclplot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     log.info(f"cmd_cclplot: normalize={normalize_flag}")
     await update.message.reply_text(f"Graficando {tickers_str} para {s} → {e} …")
     try:
-        img = plot_tickers_usd(tickers, s, e, normalize_flag)
+        img = await asyncio.to_thread(plot_tickers_usd, tickers, s, e, normalize_flag)
         await update.message.reply_photo(img, caption=f"{tickers_str} – {s} → {e}")
     except RuntimeError as ex:
         await update.message.reply_text(str(ex))
