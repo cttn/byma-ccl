@@ -13,7 +13,7 @@ import requests
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
+from matplotlib import colormaps
 from matplotlib.colors import Normalize
 
 from telegram import Update
@@ -166,10 +166,10 @@ def plot_top_bottom(real_returns: pd.Series, top_n: int, bottom_n: int,
     worst = rr.nsmallest(bottom_n)
 
     norm_pos = Normalize(vmin=float(best.min()), vmax=float(best.max()))
-    colors_pos = cm.get_cmap(cmap_pos)(norm_pos(best.values))
+    colors_pos = colormaps.get_cmap(cmap_pos)(norm_pos(best.values))
 
     norm_neg = Normalize(vmin=float(np.abs(worst).min()), vmax=float(np.abs(worst).max()))
-    colors_neg = cm.get_cmap(cmap_neg)(norm_neg(np.abs(worst.values)))
+    colors_neg = colormaps.get_cmap(cmap_neg)(norm_neg(np.abs(worst.values)))
 
     fig = plt.figure(figsize=(11.5, 8.5), dpi=150)
     gs = fig.add_gridspec(2, 1, height_ratios=[1, 1], hspace=0.32)
