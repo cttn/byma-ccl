@@ -341,15 +341,21 @@ async def cmd_cclvars(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     normalize_flag = get_normalize(update.effective_chat.id)
-    await update.message.reply_text(f"Calculando Top {top_n} / Bottom {bot_n} para {s} → {e} …")
+    # Enviamos primero la respuesta al usuario antes de los cálculos pesados
+    await update.message.reply_text(
+        f"Calculando Top {top_n} / Bottom {bot_n} para {s} → {e} …"
+    )
     try:
-        series, msg = get_var(s, e)
+        # Ejecutamos tareas de cálculo en un hilo aparte para no bloquear el loop
+        series, msg = await asyncio.to_thread(get_var, s, e)
         if series.dropna().empty:
             await update.message.reply_text("Sin datos para ese rango.")
             if msg:
                 await update.message.reply_text(msg)
             return
-        img = plot_top_bottom(series, top_n, bot_n, s, e, normalize_flag)
+        img = await asyncio.to_thread(
+            plot_top_bottom, series, top_n, bot_n, s, e, normalize_flag
+        )
         await update.message.reply_photo(img, caption=f"Top/Bottom {s} → {e}")
         if msg:
             await update.message.reply_text(msg)
