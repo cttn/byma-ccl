@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import yfinance as yf
+import requests
 
 import matplotlib
 matplotlib.use("Agg")
@@ -98,20 +99,63 @@ def download_ccl(start: str, end: str) -> pd.Series:
     ccl = (ypf_ars / ypf_usd).to_frame("CCL").asfreq("D").ffill()["CCL"]
     return ccl
 
-def get_var(start: str, end: str) -> pd.Series:
+def get_var(start: str, end: str) -> tuple[pd.Series, str]:
     """Retornos en USD (vía CCL) entre start y end, ordenados ascendente (%)."""
-    df = yf.download(TICKERS, start=start, end=end, auto_adjust=True, progress=False)
-    if "Close" not in df:
+    data = {}
+    failed = []
+
+    for t in TICKERS:
+        try:
+            df = yf.download([t], start=start, end=end, auto_adjust=True, progress=False)
+        except (TimeoutError, requests.exceptions.RequestException, Exception) as ex:
+            log.warning(f"Fallo descargando {t}: {ex}")
+            failed.append(t)
+            continue
+
+        if "Close" not in df:
+            failed.append(t)
+            continue
+
+        ser = df["Close"][t] if isinstance(df["Close"], pd.DataFrame) else df["Close"]
+        if ser.dropna().empty:
+            failed.append(t)
+            continue
+        data[t] = ser
+
+    if failed:
+        retry_fail = []
+        for t in failed:
+            try:
+                df = yf.download([t], start=start, end=end, auto_adjust=True, progress=False, timeout=30)
+            except (TimeoutError, requests.exceptions.RequestException, Exception) as ex:
+                log.warning(f"Reintento fallido para {t}: {ex}")
+                retry_fail.append(t)
+                continue
+
+            if "Close" not in df:
+                retry_fail.append(t)
+                continue
+
+            ser = df["Close"][t] if isinstance(df["Close"], pd.DataFrame) else df["Close"]
+            if ser.dropna().empty:
+                retry_fail.append(t)
+                continue
+            data[t] = ser
+        failed = retry_fail
+
+    if not data:
         raise RuntimeError("No se pudieron descargar precios.")
-    close = df["Close"]
-    if isinstance(close, pd.Series):
-        close = close.to_frame()
+
+    close = pd.DataFrame(data)
 
     ccl = download_ccl(start, end).to_frame().ffill()
     close_usd = close.div(ccl["CCL"], axis=0)
 
     var = (close_usd.iloc[-1] / close_usd.iloc[0] - 1.0) * 100.0
-    return var.dropna().sort_values()
+    msg = ""
+    if failed:
+        msg = "Tickers omitidos por error de descarga: " + ", ".join(prettify_symbol(t) for t in failed)
+    return var.dropna().sort_values(), msg
 
 def plot_top_bottom(real_returns: pd.Series, top_n: int, bottom_n: int,
                     start_label: str, end_label: str, normalize_flag: bool,
@@ -253,9 +297,11 @@ async def cmd_cclvars(update: Update, context: ContextTypes.DEFAULT_TYPE):
     normalize_flag = get_normalize(update.effective_chat.id)
     await update.message.reply_text(f"Calculando Top {top_n} / Bottom {bot_n} para {s} → {e} …")
     try:
-        series = get_var(s, e)
+        series, msg = get_var(s, e)
         img = plot_top_bottom(series, top_n, bot_n, s, e, normalize_flag)
         await update.message.reply_photo(img, caption=f"Top/Bottom {s} → {e}")
+        if msg:
+            await update.message.reply_text(msg)
     except Exception as ex:
         log.exception(ex)
         await update.message.reply_text(f"Error al generar gráfico: {ex}")
