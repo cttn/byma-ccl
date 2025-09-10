@@ -222,39 +222,49 @@ def plot_top_bottom(real_returns: pd.Series, top_n: int, bottom_n: int,
     bio.seek(0)
     return bio
 
-def plot_ticker_usd(ticker_ba: str, start: str, end: str, normalize_flag: bool) -> io.BytesIO:
-    """Línea de precio en USD (vía CCL). Normaliza a 100 en la fecha inicial si normalize_flag=True."""
-    ticker_ba = norm_ticker_ba(ticker_ba)
-    px = yf.download([ticker_ba], start=start, end=end, auto_adjust=True, progress=False)["Close"]
-    ser = px[ticker_ba] if isinstance(px, pd.DataFrame) else px
-    if isinstance(ser.index, pd.DatetimeIndex):
-        ser.index = (ser.index.tz_convert('UTC').tz_localize(None)
-                     if ser.index.tz is not None else ser.index.tz_localize(None))
+def plot_tickers_usd(tickers: list[str], start: str, end: str, normalize_flag: bool) -> io.BytesIO:
+    """Grafica múltiples tickers en USD (vía CCL).
+
+    Cada serie se normaliza a 100 en la fecha inicial si ``normalize_flag`` es True;
+    caso contrario se muestran valores absolutos en USD.
+    """
+    tickers_ba = [norm_ticker_ba(t) for t in tickers]
+    px = yf.download(tickers_ba, start=start, end=end, auto_adjust=True, progress=False)["Close"]
+    if isinstance(px, pd.Series):
+        close = px.to_frame(tickers_ba[0])
+    else:
+        close = px
+    if isinstance(close.index, pd.DatetimeIndex):
+        close.index = (close.index.tz_convert('UTC').tz_localize(None)
+                       if close.index.tz is not None else close.index.tz_localize(None))
 
     ccl = download_ccl(start, end)
     if isinstance(ccl.index, pd.DatetimeIndex):
         ccl.index = (ccl.index.tz_convert('UTC').tz_localize(None)
                      if ccl.index.tz is not None else ccl.index.tz_localize(None))
-    usd = (ser / ccl).dropna()
+    usd = close.div(ccl, axis=0).dropna(axis=1, how="all").dropna()
 
     if usd.empty:
         raise RuntimeError("Sin datos para ese rango.")
 
-    fig, ax = plt.subplots(figsize=(10, 5), dpi=150)
-
     if normalize_flag:
-        idx = usd / usd.iloc[0] * 100.0
-        ax.plot(idx.index, idx.values)
-        ax.set_ylabel("Índice (100=ini)")
+        plot_df = usd.divide(usd.iloc[0], axis=1) * 100.0
+        ylabel = "Índice (100=ini)"
         title_tag = " – Normalizado (100=ini)"
     else:
-        ax.plot(usd.index, usd.values)
-        ax.set_ylabel("USD")
+        plot_df = usd
+        ylabel = "USD"
         title_tag = " – USD"
 
-    ax.set_title(f"{prettify_symbol(ticker_ba)}{title_tag} vía CCL")
+    fig, ax = plt.subplots(figsize=(10, 5), dpi=150)
+    for col in plot_df.columns:
+        ax.plot(plot_df.index, plot_df[col], label=prettify_symbol(col))
+
+    ax.set_ylabel(ylabel)
     ax.set_xlabel("Fecha")
+    ax.set_title(f"{', '.join(prettify_symbol(t) for t in plot_df.columns)}{title_tag} vía CCL")
     ax.grid(True, alpha=0.25)
+    ax.legend()
 
     bio = io.BytesIO()
     fig.savefig(bio, format="png", bbox_inches="tight")
@@ -342,8 +352,8 @@ async def cmd_cclvars(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Error al generar gráfico: {ex}")
 
 async def cmd_cclplot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if len(context.args) != 1:
-        await update.message.reply_text("Uso: /cclplot <TICKER> (ej: /cclplot BBAR)")
+    if len(context.args) < 1:
+        await update.message.reply_text("Uso: /cclplot <TICKER1> [TICKER2 …]")
         return
 
     s, e = get_dates(update.effective_chat.id)
@@ -351,15 +361,17 @@ async def cmd_cclplot(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Definí primero el rango con /ini y /fin.")
         return
 
-    ticker = context.args[0]
+    tickers = context.args
+    tickers_norm = [norm_ticker_ba(t).upper() for t in tickers]
+    tickers_str = ", ".join(tickers_norm)
     normalize_flag = get_normalize(update.effective_chat.id)
-    await update.message.reply_text(f"Graficando {ticker}.BA para {s} → {e} …")
+    await update.message.reply_text(f"Graficando {tickers_str} para {s} → {e} …")
     try:
-        img = plot_ticker_usd(ticker, s, e, normalize_flag)
-        await update.message.reply_photo(img, caption=f"{ticker.upper()}.BA – {s} → {e}")
+        img = plot_tickers_usd(tickers, s, e, normalize_flag)
+        await update.message.reply_photo(img, caption=f"{tickers_str} – {s} → {e}")
     except Exception as ex:
         log.exception(ex)
-        await update.message.reply_text(f"Error al graficar {ticker}: {ex}")
+        await update.message.reply_text(f"Error al graficar {tickers_str}: {ex}")
 
 # ------------------------- MAIN ---------------------
 def main():
