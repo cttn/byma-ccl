@@ -276,7 +276,7 @@ def plot_tickers_usd(tickers: list[str], start: str, end: str, normalize_flag: b
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     s, e = get_dates(update.effective_chat.id)
     norm = get_normalize(update.effective_chat.id)
-    msg = "Comandos: /ini YYYY-MM-DD | /fin YYYY-MM-DD | /cclvars N M | /cclplot TICKER | /normalize\n"
+    msg = "Comandos: /ini YYYY-MM-DD | /fin YYYY-MM-DD | /cclvars N M | /cclplot TICKER1 [TICKER2 ...] | /normalize\n"
     msg += f"Rango actual: inicio={s or '⟂'} | fin={e or '⟂'} | normalize={norm}"
     await update.message.reply_text(msg)
 

@@ -64,10 +64,10 @@ Bot público: **[@BYMAcclBot](https://t.me/bymacclBot)**
   Grafica **Top N / Bottom M** de rendimientos en **USD (vía CCL)** para el rango guardado.  
   Ejemplo: `/cclvars 15 20`.
 
-- **/cclplot TICKER**  
-  Grafica la serie en **USD (vía CCL)** de `TICKER.BA` para el rango guardado.  
-  Respeta el flag de normalización.  
-  Ejemplo: `/cclplot BBAR`.
+- **/cclplot TICKER1 [TICKER2 ...]**
+  Grafica la serie en **USD (vía CCL)** de uno o varios tickers `TICKER.BA` para el rango guardado.
+  Respeta el flag de normalización para todos.
+  Ejemplo: `/cclplot BBAR GGAL`.
 
 - **/normalize**  
   Alterna el flag `normalize` entre **True/False** (persistente por chat) y explica el efecto:  
