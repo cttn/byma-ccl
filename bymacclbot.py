@@ -171,7 +171,7 @@ def plot_top_bottom(real_returns: pd.Series, top_n: int, bottom_n: int,
     norm_neg = Normalize(vmin=float(np.abs(worst).min()), vmax=float(np.abs(worst).max()))
     colors_neg = colormaps.get_cmap(cmap_neg)(norm_neg(np.abs(worst.values)))
 
-    fig = plt.figure(figsize=(11.5, 8.5), dpi=150)
+    fig = plt.figure(figsize=(11.5, 8.5), dpi=150, constrained_layout=True)
     gs = fig.add_gridspec(2, 1, height_ratios=[1, 1], hspace=0.32)
 
     tag = " (Base 100=ini, USD vía CCL)" if normalize_flag else " (USD vía CCL)"
@@ -181,6 +181,7 @@ def plot_top_bottom(real_returns: pd.Series, top_n: int, bottom_n: int,
     ax1.bar(x1, best.values, color=colors_pos, edgecolor="none")
     ax1.set_title("Best Performing Tickers" + tag)
     ax1.set_ylabel("Return (%)")
+    ax1.set_xticks(range(len(x1)))
     ax1.set_xticklabels(x1, rotation=45, ha="right")
 
     ax2 = fig.add_subplot(gs[1, 0])
@@ -188,12 +189,11 @@ def plot_top_bottom(real_returns: pd.Series, top_n: int, bottom_n: int,
     ax2.bar(x2, worst.values, color=colors_neg, edgecolor="none")
     ax2.set_title("Worst Performing Tickers" + tag)
     ax2.set_ylabel("Return (%)")
+    ax2.set_xticks(range(len(x2)))
     ax2.set_xticklabels(x2, rotation=45, ha="right")
 
     if start_label or end_label:
-        fig.suptitle(f"Período: {start_label} → {end_label}", y=0.99, fontsize=10)
-
-    plt.tight_layout()
+        fig.suptitle(f"Período: {start_label} → {end_label}", fontsize=10)
     bio = io.BytesIO()
     fig.savefig(bio, format="png", bbox_inches="tight")
     plt.close(fig)
