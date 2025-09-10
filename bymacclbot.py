@@ -101,7 +101,7 @@ def download_ccl(start: str, end: str) -> pd.Series:
                         if df.index.tz is not None else df.index.tz_localize(None))
     ypf_ars = df_ars["Close"]["YPFD.BA"] if isinstance(df_ars["Close"], pd.DataFrame) else df_ars["Close"]
     ypf_usd = df_us["Close"]["YPF"]     if isinstance(df_us["Close"],  pd.DataFrame) else df_us["Close"]
-    ccl = (ypf_ars / ypf_usd).to_frame("CCL").asfreq("D").ffill()["CCL"]
+    ccl = (ypf_ars / ypf_usd).to_frame("CCL").asfreq("D").ffill().bfill()["CCL"]
     if isinstance(ccl.index, pd.DatetimeIndex):
         ccl.index = (ccl.index.tz_convert('UTC').tz_localize(None)
                      if ccl.index.tz is not None else ccl.index.tz_localize(None))
