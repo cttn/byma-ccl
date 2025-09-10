@@ -244,11 +244,19 @@ def plot_tickers_usd(tickers: list[str], start: str, end: str, normalize_flag: b
                      if ccl.index.tz is not None else ccl.index.tz_localize(None))
     usd = close.div(ccl, axis=0).dropna(axis=1, how="all").dropna()
 
+    log.info(f"plot_tickers_usd: normalize={normalize_flag}, usd_shape={usd.shape}")
+
     if usd.empty:
         raise RuntimeError("Sin datos para ese rango.")
 
     if normalize_flag:
-        plot_df = usd.divide(usd.iloc[0], axis=1) * 100.0
+        base = usd.iloc[0]
+        if (base == 0).any() or base.isna().any():
+            base = usd.replace(0, np.nan).apply(lambda col: col.dropna().iloc[0] if not col.dropna().empty else np.nan)
+            if base.isna().any():
+                bad = [prettify_symbol(c) for c in base.index[base.isna()]]
+                raise RuntimeError("No se encontraron valores válidos para normalizar: " + ", ".join(bad))
+        plot_df = usd.divide(base, axis=1) * 100.0
         ylabel = "Índice (100=ini)"
         title_tag = " – Normalizado (100=ini)"
     else:
@@ -365,10 +373,13 @@ async def cmd_cclplot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tickers_norm = [norm_ticker_ba(t).upper() for t in tickers]
     tickers_str = ", ".join(tickers_norm)
     normalize_flag = get_normalize(update.effective_chat.id)
+    log.info(f"cmd_cclplot: normalize={normalize_flag}")
     await update.message.reply_text(f"Graficando {tickers_str} para {s} → {e} …")
     try:
         img = plot_tickers_usd(tickers, s, e, normalize_flag)
         await update.message.reply_photo(img, caption=f"{tickers_str} – {s} → {e}")
+    except RuntimeError as ex:
+        await update.message.reply_text(str(ex))
     except Exception as ex:
         log.exception(ex)
         await update.message.reply_text(f"Error al graficar {tickers_str}: {ex}")
