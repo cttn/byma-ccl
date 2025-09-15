@@ -229,7 +229,19 @@ def plot_tickers_usd(tickers: list[str], start: str, end: str, normalize_flag: b
     caso contrario se muestran valores absolutos en USD.
     """
     tickers_ba = [norm_ticker_ba(t) for t in tickers]
-    px = yf.download(tickers_ba, start=start, end=end, auto_adjust=True, progress=False)["Close"]
+    log.info(
+        "plot_tickers_usd request tickers=%s start=%s end=%s",
+        tickers_ba,
+        start,
+        end,
+    )
+    raw = yf.download(
+        tickers_ba, start=start, end=end, auto_adjust=True, progress=False
+    )
+    log.info(
+        "plot_tickers_usd yf.download shape=%s", getattr(raw, "shape", None)
+    )
+    px = raw["Close"]
     if isinstance(px, pd.Series):
         close = px.to_frame(tickers_ba[0])
     else:
@@ -244,22 +256,42 @@ def plot_tickers_usd(tickers: list[str], start: str, end: str, normalize_flag: b
                      if ccl.index.tz is not None else ccl.index.tz_localize(None))
     usd = close.div(ccl, axis=0).dropna(axis=1, how="all").dropna()
 
-    log.info(f"plot_tickers_usd: normalize={normalize_flag}, usd_shape={usd.shape}")
+    log.info(
+        "plot_tickers_usd: normalize=%s, usd_shape=%s",
+        normalize_flag,
+        usd.shape,
+    )
 
     if usd.empty:
         raise RuntimeError("Sin datos para ese rango.")
 
     if normalize_flag:
+        log.info("plot_tickers_usd applying normalization")
         base = usd.iloc[0]
-        if (base == 0).any() or base.isna().any():
-            base = usd.replace(0, np.nan).apply(lambda col: col.dropna().iloc[0] if not col.dropna().empty else np.nan)
-            if base.isna().any():
-                bad = [prettify_symbol(c) for c in base.index[base.isna()]]
-                raise RuntimeError("No se encontraron valores válidos para normalizar: " + ", ".join(bad))
+        invalid = base[(base == 0) | base.isna()]
+        if not invalid.empty:
+            bad_cols = [prettify_symbol(c) for c in invalid.index]
+            log.warning(
+                "plot_tickers_usd invalid base values for %s", bad_cols
+            )
+            base = usd.replace(0, np.nan).apply(
+                lambda col: col.dropna().iloc[0] if not col.dropna().empty else np.nan
+            )
+            still_bad = base[base.isna()]
+            if not still_bad.empty:
+                bad = [prettify_symbol(c) for c in still_bad.index]
+                log.error(
+                    "plot_tickers_usd no valid values after cleanup for %s", bad
+                )
+                raise RuntimeError(
+                    "No se encontraron valores válidos para normalizar: "
+                    + ", ".join(bad)
+                )
         plot_df = usd.divide(base, axis=1) * 100.0
         ylabel = "Índice (100=ini)"
         title_tag = " – Normalizado (100=ini)"
     else:
+        log.info("plot_tickers_usd normalization not applied")
         plot_df = usd
         ylabel = "USD"
         title_tag = " – USD"
@@ -276,7 +308,9 @@ def plot_tickers_usd(tickers: list[str], start: str, end: str, normalize_flag: b
 
     bio = io.BytesIO()
     fig.savefig(bio, format="png", bbox_inches="tight")
+    log.info("plot_tickers_usd figure generated")
     plt.close(fig)
+    log.info("plot_tickers_usd figure closed")
     bio.seek(0)
     return bio
 
