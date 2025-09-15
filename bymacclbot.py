@@ -116,8 +116,32 @@ TICKERS = [norm_ticker_ba(x) for x in [
 
 def download_ccl(start: str, end: str) -> pd.Series:
     """CCL = YPFD.BA / YPF (Close)."""
-    df_ars = yf.download(["YPFD.BA"], start=start, end=end, auto_adjust=True, progress=False)
-    df_us  = yf.download(["YPF"],     start=start, end=end, auto_adjust=True, progress=False)
+    try:
+        log.info("download_ccl request %s start=%s end=%s", "YPFD.BA", start, end)
+        df_ars = yf.download(["YPFD.BA"], start=start, end=end, auto_adjust=True, progress=False)
+        log.info(
+            "download_ccl response %s shape=%s index_range=%s→%s",
+            "YPFD.BA",
+            getattr(df_ars, "shape", None),
+            df_ars.index.min() if getattr(df_ars, "index", None) is not None and not df_ars.index.empty else None,
+            df_ars.index.max() if getattr(df_ars, "index", None) is not None and not df_ars.index.empty else None,
+        )
+    except Exception as ex:
+        log.error("download_ccl error downloading %s: %s", "YPFD.BA", ex, exc_info=True)
+        raise
+    try:
+        log.info("download_ccl request %s start=%s end=%s", "YPF", start, end)
+        df_us = yf.download(["YPF"], start=start, end=end, auto_adjust=True, progress=False)
+        log.info(
+            "download_ccl response %s shape=%s index_range=%s→%s",
+            "YPF",
+            getattr(df_us, "shape", None),
+            df_us.index.min() if getattr(df_us, "index", None) is not None and not df_us.index.empty else None,
+            df_us.index.max() if getattr(df_us, "index", None) is not None and not df_us.index.empty else None,
+        )
+    except Exception as ex:
+        log.error("download_ccl error downloading %s: %s", "YPF", ex, exc_info=True)
+        raise
     # Normalizar índices para evitar problemas de zona horaria
     for df in (df_ars, df_us):
         if isinstance(df.index, pd.DatetimeIndex):
@@ -129,6 +153,15 @@ def download_ccl(start: str, end: str) -> pd.Series:
     if isinstance(ccl.index, pd.DatetimeIndex):
         ccl.index = (ccl.index.tz_convert('UTC').tz_localize(None)
                      if ccl.index.tz is not None else ccl.index.tz_localize(None))
+    idx = getattr(ccl, "index", None)
+    index_min = idx.min() if idx is not None and not idx.empty else None
+    index_max = idx.max() if idx is not None and not idx.empty else None
+    log.debug(
+        "download_ccl result size=%s index_range=%s→%s",
+        ccl.size,
+        index_min,
+        index_max,
+    )
     return ccl
 
 def get_var(start: str, end: str) -> tuple[pd.Series, str]:
