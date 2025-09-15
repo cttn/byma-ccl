@@ -30,13 +30,29 @@ log = logging.getLogger("ccl-bot")
 def load_state() -> dict:
     if STATE_FILE.exists():
         try:
-            return json.loads(STATE_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+            size = STATE_FILE.stat().st_size
+            log.debug(f"Loading state from {STATE_FILE.resolve()} ({size} bytes)")
+            data = STATE_FILE.read_text(encoding="utf-8")
+            state = json.loads(data)
+            log.debug(f"Loaded state from {STATE_FILE.resolve()} ({len(data)} bytes)")
+            return state
+        except Exception as ex:
+            log.error(f"Error loading state from {STATE_FILE.resolve()}: {ex}")
+    else:
+        log.debug(f"State file {STATE_FILE.resolve()} does not exist")
     return {}
 
-def save_state(state: dict) -> None:
-    STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+def save_state(state: dict, chat_id: int | None = None) -> None:
+    try:
+        data = json.dumps(state, ensure_ascii=False, indent=2)
+        log.debug(f"Saving state to {STATE_FILE.resolve()} ({len(data)} bytes)")
+        STATE_FILE.write_text(data, encoding="utf-8")
+        log.debug(f"Saved state to {STATE_FILE.resolve()} ({STATE_FILE.stat().st_size} bytes)")
+    except Exception as ex:
+        if chat_id is not None:
+            log.error(f"Error saving state for chat_id={chat_id} to {STATE_FILE.resolve()}: {ex}")
+        else:
+            log.error(f"Error saving state to {STATE_FILE.resolve()}: {ex}")
 
 def get_chat_state(chat_id: int) -> dict:
     st = load_state().get(str(chat_id), {})
@@ -50,7 +66,7 @@ def set_chat_state(chat_id: int, **kwargs):
     st = state.get(str(chat_id), {})
     st.update(kwargs)
     state[str(chat_id)] = st
-    save_state(state)
+    save_state(state, chat_id)
 
 def set_date(chat_id: int, key: str, value: str):
     set_chat_state(chat_id, **{key: value})
