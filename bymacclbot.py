@@ -23,7 +23,11 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "REEMPLAZA_CON_TU_TOKEN")
 STATE_FILE = Path("state.json")  # persistencia por chat_id
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, log_level, logging.INFO),
+    format="%(asctime)s %(name)s %(module)s:%(lineno)d %(levelname)s %(message)s",
+)
 log = logging.getLogger("ccl-bot")
 
 # ------------------ UTIL / PERSISTENCIA -------------

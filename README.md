@@ -117,7 +117,7 @@ numpy
 
 - **Token**: variable de entorno `TELEGRAM_BOT_TOKEN` (otorgado por BotFather).  
 - **Persistencia**: archivo `state.json` en la raíz (se crea automáticamente).  
-- **Logs**: nivel `INFO` por defecto.
+- **Logs**: nivel `INFO` por defecto (`LOG_LEVEL` para ajustarlo, p.ej., `DEBUG`).
 
 > **Seguridad**: no publiques tu token en repos/commits. Usá variables de entorno, `.env` o secrets del proveedor.
 
