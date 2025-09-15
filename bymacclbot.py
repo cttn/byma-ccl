@@ -286,7 +286,14 @@ def plot_tickers_usd(tickers: list[str], start: str, end: str, normalize_flag: b
             else ccl.index.tz_localize(None)
         )
     log.debug("plot_tickers_usd ccl shape=%s", getattr(ccl, "shape", None))
-    usd = close.div(ccl, axis=0).dropna(axis=1, how="all").dropna()
+    usd = (
+        close.div(ccl, axis=0)
+        .dropna(axis=1, how="all")
+        .dropna(how="all")
+    )
+    missing = usd.columns[usd.isna().any()]
+    if not missing.empty:
+        log.warning("plot_tickers_usd missing data for %s", list(missing))
     log.debug("plot_tickers_usd usd shape=%s", usd.shape)
 
     log.info(
