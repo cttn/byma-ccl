@@ -370,7 +370,8 @@ async def cmd_cclplot(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Uso: /cclplot <TICKER1> [TICKER2 …]")
         return
 
-    s, e = get_dates(update.effective_chat.id)
+    chat_id = update.effective_chat.id
+    s, e = get_dates(chat_id)
     if not s or not e:
         await update.message.reply_text("Definí primero el rango con /ini y /fin.")
         return
@@ -378,16 +379,20 @@ async def cmd_cclplot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tickers = context.args
     tickers_norm = [norm_ticker_ba(t).upper() for t in tickers]
     tickers_str = ", ".join(tickers_norm)
-    normalize_flag = get_normalize(update.effective_chat.id)
-    log.info(f"cmd_cclplot: normalize={normalize_flag}")
+    normalize_flag = get_normalize(chat_id)
+    ctx_info = (f"chat_id={chat_id} tickers={tickers_norm} "
+                f"start={s} end={e} normalize={normalize_flag}")
+    log.info(f"cmd_cclplot start {ctx_info}")
     await update.message.reply_text(f"Graficando {tickers_str} para {s} → {e} …")
     try:
         img = await asyncio.to_thread(plot_tickers_usd, tickers, s, e, normalize_flag)
         await update.message.reply_photo(img, caption=f"{tickers_str} – {s} → {e}")
+        log.info(f"cmd_cclplot response sent {ctx_info}")
     except RuntimeError as ex:
+        log.exception(f"cmd_cclplot runtime error {ctx_info}")
         await update.message.reply_text(str(ex))
     except Exception as ex:
-        log.exception(ex)
+        log.exception(f"cmd_cclplot error {ctx_info}")
         await update.message.reply_text(f"Error al graficar {tickers_str}: {ex}")
 
 # ------------------------- MAIN ---------------------
