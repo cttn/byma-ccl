@@ -309,7 +309,7 @@ def plot_tickers_usd(tickers: list[str], start: str, end: str, normalize_flag: b
             if close.index.tz is not None
             else close.index.tz_localize(None)
         )
-    log.debug("plot_tickers_usd close shape=%s", getattr(close, "shape", None))
+    log.info("plot_tickers_usd close shape=%s", getattr(close, "shape", None))
 
     ccl = download_ccl(start, end)
     if isinstance(ccl.index, pd.DatetimeIndex):
@@ -318,7 +318,7 @@ def plot_tickers_usd(tickers: list[str], start: str, end: str, normalize_flag: b
             if ccl.index.tz is not None
             else ccl.index.tz_localize(None)
         )
-    log.debug("plot_tickers_usd ccl shape=%s", getattr(ccl, "shape", None))
+    log.info("plot_tickers_usd ccl shape=%s", getattr(ccl, "shape", None))
     usd = (
         close.div(ccl, axis=0)
         .dropna(axis=1, how="all")
@@ -327,7 +327,7 @@ def plot_tickers_usd(tickers: list[str], start: str, end: str, normalize_flag: b
     missing = usd.columns[usd.isna().any()]
     if not missing.empty:
         log.warning("plot_tickers_usd missing data for %s", list(missing))
-    log.debug("plot_tickers_usd usd shape=%s", usd.shape)
+    log.info("plot_tickers_usd usd shape=%s", usd.shape)
 
     log.info(
         "plot_tickers_usd: normalize=%s, usd_shape=%s",
@@ -394,7 +394,7 @@ def plot_tickers_usd(tickers: list[str], start: str, end: str, normalize_flag: b
 
     bio = io.BytesIO()
     fig.savefig(bio, format="png", bbox_inches="tight")
-    log.debug(
+    log.info(
         "plot_tickers_usd plot_df columns=%s index_range=%s→%s rows=%d",
         list(plot_df.columns),
         plot_df.index.min() if not plot_df.index.empty else None,
