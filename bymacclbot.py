@@ -446,14 +446,26 @@ async def cmd_cclplot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     log.info(f"cmd_cclplot start {ctx_info}")
     await update.message.reply_text(f"Graficando {tickers_str} para {s} → {e} …")
     try:
+        log.info(f"cmd_cclplot to_thread start {ctx_info}")
         img = await asyncio.to_thread(plot_tickers_usd, tickers, s, e, normalize_flag)
+        size = img.getbuffer().nbytes if hasattr(img, "getbuffer") else None
+        if size is not None:
+            log.info(f"cmd_cclplot to_thread done {ctx_info} size={size}")
+        else:
+            log.info(f"cmd_cclplot to_thread done {ctx_info}")
         await update.message.reply_photo(img, caption=f"{tickers_str} – {s} → {e}")
         log.info(f"cmd_cclplot response sent {ctx_info}")
     except RuntimeError as ex:
-        log.exception(f"cmd_cclplot runtime error {ctx_info}")
+        log.error(
+            f"cmd_cclplot runtime error {ctx_info} exception={ex}",
+            exc_info=True,
+        )
         await update.message.reply_text(str(ex))
     except Exception as ex:
-        log.exception(f"cmd_cclplot error {ctx_info}")
+        log.error(
+            f"cmd_cclplot error {ctx_info} exception={ex}",
+            exc_info=True,
+        )
         await update.message.reply_text(f"Error al graficar {tickers_str}: {ex}")
 
 # ------------------------- MAIN ---------------------
