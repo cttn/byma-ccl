@@ -271,14 +271,23 @@ def plot_tickers_usd(tickers: list[str], start: str, end: str, normalize_flag: b
     else:
         close = px
     if isinstance(close.index, pd.DatetimeIndex):
-        close.index = (close.index.tz_convert('UTC').tz_localize(None)
-                       if close.index.tz is not None else close.index.tz_localize(None))
+        close.index = (
+            close.index.tz_convert("UTC").tz_localize(None)
+            if close.index.tz is not None
+            else close.index.tz_localize(None)
+        )
+    log.debug("plot_tickers_usd close shape=%s", getattr(close, "shape", None))
 
     ccl = download_ccl(start, end)
     if isinstance(ccl.index, pd.DatetimeIndex):
-        ccl.index = (ccl.index.tz_convert('UTC').tz_localize(None)
-                     if ccl.index.tz is not None else ccl.index.tz_localize(None))
+        ccl.index = (
+            ccl.index.tz_convert("UTC").tz_localize(None)
+            if ccl.index.tz is not None
+            else ccl.index.tz_localize(None)
+        )
+    log.debug("plot_tickers_usd ccl shape=%s", getattr(ccl, "shape", None))
     usd = close.div(ccl, axis=0).dropna(axis=1, how="all").dropna()
+    log.debug("plot_tickers_usd usd shape=%s", usd.shape)
 
     log.info(
         "plot_tickers_usd: normalize=%s, usd_shape=%s",
@@ -287,14 +296,26 @@ def plot_tickers_usd(tickers: list[str], start: str, end: str, normalize_flag: b
     )
 
     if usd.empty:
+        log.info(
+            "plot_tickers_usd empty usd for tickers=%s (ba=%s) start=%s end=%s",
+            tickers,
+            tickers_ba,
+            start,
+            end,
+        )
         raise RuntimeError("Sin datos para ese rango.")
 
     if normalize_flag:
         log.info("plot_tickers_usd applying normalization")
         base = usd.iloc[0]
+        log.debug("plot_tickers_usd base initial=%s", base.to_dict())
         invalid = base[(base == 0) | base.isna()]
         if not invalid.empty:
             bad_cols = [prettify_symbol(c) for c in invalid.index]
+            log.info("plot_tickers_usd filtering invalid base tickers=%s", bad_cols)
+            log.debug(
+                "plot_tickers_usd invalid base values=%s", invalid.to_dict()
+            )
             log.warning(
                 "plot_tickers_usd invalid base values for %s", bad_cols
             )
@@ -311,6 +332,7 @@ def plot_tickers_usd(tickers: list[str], start: str, end: str, normalize_flag: b
                     "No se encontraron valores válidos para normalizar: "
                     + ", ".join(bad)
                 )
+        log.debug("plot_tickers_usd base finalized=%s", base.to_dict())
         plot_df = usd.divide(base, axis=1) * 100.0
         ylabel = "Índice (100=ini)"
         title_tag = " – Normalizado (100=ini)"
@@ -332,6 +354,13 @@ def plot_tickers_usd(tickers: list[str], start: str, end: str, normalize_flag: b
 
     bio = io.BytesIO()
     fig.savefig(bio, format="png", bbox_inches="tight")
+    log.debug(
+        "plot_tickers_usd plot_df columns=%s index_range=%s→%s rows=%d",
+        list(plot_df.columns),
+        plot_df.index.min() if not plot_df.index.empty else None,
+        plot_df.index.max() if not plot_df.index.empty else None,
+        len(plot_df.index),
+    )
     log.info("plot_tickers_usd figure generated")
     plt.close(fig)
     log.info("plot_tickers_usd figure closed")
