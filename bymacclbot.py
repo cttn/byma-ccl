@@ -24,10 +24,14 @@ TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "REEMPLAZA_CON_TU_TOKEN")
 STATE_FILE = Path("state.json")  # persistencia por chat_id
 
 log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+configured_level = getattr(logging, log_level, None)
 logging.basicConfig(
-    level=getattr(logging, log_level, logging.INFO),
+    level=configured_level if isinstance(configured_level, int) else logging.INFO,
     format="%(asctime)s %(name)s %(module)s:%(lineno)d %(levelname)s %(message)s",
+    force=True,
 )
+if not isinstance(configured_level, int):
+    logging.warning("Invalid LOG_LEVEL %s, defaulting to INFO", log_level)
 log = logging.getLogger("ccl-bot")
 
 # ------------------ UTIL / PERSISTENCIA -------------
