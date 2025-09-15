@@ -369,7 +369,9 @@ async def cmd_fin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Fecha inválida. Formato: YYYY-MM-DD")
 
 async def cmd_normalize(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    new_val = toggle_normalize(update.effective_chat.id)
+    chat_id = update.effective_chat.id
+    new_val = toggle_normalize(chat_id)
+    log.info("cmd_normalize chat_id=%s new_val=%s", chat_id, new_val)
     if new_val:
         txt = ("Normalización: ON\n"
                "Desde ahora TODOS los gráficos se devuelven normalizados con base **100** en la fecha inicial.\n"
@@ -380,6 +382,7 @@ async def cmd_normalize(update: Update, context: ContextTypes.DEFAULT_TYPE):
                "Desde ahora los gráficos NO se normalizan.\n"
                "- /cclplot: precio en USD (vía CCL) absoluto.\n"
                "- /cclvars: rendimientos relativos en % (sin base 100 en el título).")
+    log.debug("cmd_normalize response chat_id=%s text=%r", chat_id, txt)
     await update.message.reply_text(txt, disable_web_page_preview=True)
 
 async def cmd_cclvars(update: Update, context: ContextTypes.DEFAULT_TYPE):
