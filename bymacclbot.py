@@ -80,12 +80,16 @@ def get_dates(chat_id: int):
     return st.get("start"), st.get("end")
 
 def get_normalize(chat_id: int) -> bool:
-    return bool(get_chat_state(chat_id).get("normalize", False))
+    value = bool(get_chat_state(chat_id).get("normalize", False))
+    log.debug(f"chat_id={chat_id} normalize={value}")
+    return value
 
 def toggle_normalize(chat_id: int) -> bool:
     current = get_normalize(chat_id)
-    set_chat_state(chat_id, normalize=not current)
-    return not current
+    new_state = not current
+    set_chat_state(chat_id, normalize=new_state)
+    log.info(f"chat_id={chat_id} normalize toggled {current} -> {new_state}")
+    return new_state
 
 def parse_date(s: str) -> str:
     return datetime.strptime(s, "%Y-%m-%d").date().isoformat()
