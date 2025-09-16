@@ -5,6 +5,7 @@ import os, json, logging, io, asyncio, uuid
 from datetime import datetime
 from pathlib import Path
 from contextlib import contextmanager
+from typing import Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -155,7 +156,7 @@ def load_state() -> dict:
         log.debug(f"State file {STATE_FILE.resolve()} does not exist")
     return {}
 
-def save_state(state: dict, chat_id: int | None = None) -> None:
+def save_state(state: dict, chat_id: Optional[int] = None) -> None:
     try:
         data = json.dumps(state, ensure_ascii=False, indent=2)
         STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -309,7 +310,7 @@ def get_var(start: str, end: str) -> tuple[pd.Series, str]:
     data: dict[str, pd.Series] = {}
     failed: list[str] = []
 
-    def normalize_index(obj: pd.DataFrame | pd.Series) -> pd.DataFrame | pd.Series:
+    def normalize_index(obj: Union[pd.DataFrame, pd.Series]) -> Union[pd.DataFrame, pd.Series]:
         if isinstance(obj.index, pd.DatetimeIndex):
             obj.index = ensure_utc_naive_index(obj.index)
         return obj
