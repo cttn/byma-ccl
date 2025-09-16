@@ -161,6 +161,22 @@ def norm_ticker_ba(t: str) -> str:
 def prettify_symbol(s: str) -> str:
     return s.replace(".BA", "")
 
+
+def ensure_utc_naive_index(index: pd.Index) -> pd.Index:
+    """Return a UTC-naive ``DatetimeIndex`` when possible.
+
+    ``yfinance`` sometimes returns timezone-aware indexes and other times
+    timezone-naive ones. We only convert to UTC and drop the timezone when the
+    index is tz-aware; otherwise we simply reuse the original index (copying it
+    to avoid unintended shared references).
+    """
+
+    if isinstance(index, pd.DatetimeIndex):
+        if index.tz is not None:
+            return index.tz_convert("UTC").tz_localize(None)
+        return index.copy()
+    return index
+
 # ------------------ NÚCLEO FINANCIERO ----------------
 TICKERS = [norm_ticker_ba(x) for x in [
     'ALUA','BMA','BYMA','CEPU','COME','CRES','CVH','EDN','GGAL','MIRG',
@@ -203,14 +219,12 @@ def download_ccl(start: str, end: str) -> pd.Series:
     # Normalizar índices para evitar problemas de zona horaria
     for df in (df_ars, df_us):
         if isinstance(df.index, pd.DatetimeIndex):
-            df.index = (df.index.tz_convert('UTC').tz_localize(None)
-                        if df.index.tz is not None else df.index.tz_localize(None))
+            df.index = ensure_utc_naive_index(df.index)
     ypf_ars = df_ars["Close"]["YPFD.BA"] if isinstance(df_ars["Close"], pd.DataFrame) else df_ars["Close"]
     ypf_usd = df_us["Close"]["YPF"]     if isinstance(df_us["Close"],  pd.DataFrame) else df_us["Close"]
     ccl = (ypf_ars / ypf_usd).to_frame("CCL").asfreq("D").ffill().bfill()["CCL"]
     if isinstance(ccl.index, pd.DatetimeIndex):
-        ccl.index = (ccl.index.tz_convert('UTC').tz_localize(None)
-                     if ccl.index.tz is not None else ccl.index.tz_localize(None))
+        ccl.index = ensure_utc_naive_index(ccl.index)
     idx = getattr(ccl, "index", None)
     index_min = idx.min() if idx is not None and not idx.empty else None
     index_max = idx.max() if idx is not None and not idx.empty else None
@@ -229,11 +243,7 @@ def get_var(start: str, end: str) -> tuple[pd.Series, str]:
 
     def normalize_index(obj: pd.DataFrame | pd.Series) -> pd.DataFrame | pd.Series:
         if isinstance(obj.index, pd.DatetimeIndex):
-            obj.index = (
-                obj.index.tz_convert("UTC").tz_localize(None)
-                if obj.index.tz is not None
-                else obj.index.tz_localize(None)
-            )
+            obj.index = ensure_utc_naive_index(obj.index)
         return obj
 
     def mark_failed(ticker: str, reason: str) -> None:
@@ -330,13 +340,11 @@ def get_var(start: str, end: str) -> tuple[pd.Series, str]:
 
     close = pd.DataFrame(data)
     if isinstance(close.index, pd.DatetimeIndex):
-        close.index = (close.index.tz_convert('UTC').tz_localize(None)
-                       if close.index.tz is not None else close.index.tz_localize(None))
+        close.index = ensure_utc_naive_index(close.index)
 
     ccl = download_ccl(start, end).to_frame().ffill()
     if isinstance(ccl.index, pd.DatetimeIndex):
-        ccl.index = (ccl.index.tz_convert('UTC').tz_localize(None)
-                     if ccl.index.tz is not None else ccl.index.tz_localize(None))
+        ccl.index = ensure_utc_naive_index(ccl.index)
     close_usd = close.div(ccl["CCL"], axis=0)
 
     var = (close_usd.iloc[-1] / close_usd.iloc[0] - 1.0) * 100.0
@@ -451,20 +459,12 @@ def plot_tickers_usd(tickers: list[str], start: str, end: str, normalize_flag: b
     else:
         close = px
     if isinstance(close.index, pd.DatetimeIndex):
-        close.index = (
-            close.index.tz_convert("UTC").tz_localize(None)
-            if close.index.tz is not None
-            else close.index.tz_localize(None)
-        )
+        close.index = ensure_utc_naive_index(close.index)
     log.info("plot_tickers_usd close shape=%s", getattr(close, "shape", None))
 
     ccl = download_ccl(start, end)
     if isinstance(ccl.index, pd.DatetimeIndex):
-        ccl.index = (
-            ccl.index.tz_convert("UTC").tz_localize(None)
-            if ccl.index.tz is not None
-            else ccl.index.tz_localize(None)
-        )
+        ccl.index = ensure_utc_naive_index(ccl.index)
     log.info("plot_tickers_usd ccl shape=%s", getattr(ccl, "shape", None))
     usd = (
         close.div(ccl, axis=0)
