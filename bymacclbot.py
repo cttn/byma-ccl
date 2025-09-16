@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os, json, logging, io, asyncio, fcntl, uuid
+import os, json, logging, io, asyncio, uuid
 from datetime import datetime
 from pathlib import Path
 from contextlib import contextmanager
@@ -53,20 +53,88 @@ def log_exception_with_id(message: str, *, exc: BaseException, **context) -> str
     return error_id
 
 # ------------------ FILE LOCKING -------------------
+def _create_posix_file_lock_backend(fcntl_module):
+    class _PosixFileLockBackend:
+        LOCK_SH = fcntl_module.LOCK_SH
+        LOCK_EX = fcntl_module.LOCK_EX
+
+        @staticmethod
+        def acquire(file_obj, lock_type):
+            fcntl_module.flock(file_obj.fileno(), lock_type)
+
+        @staticmethod
+        def release(file_obj):
+            fcntl_module.flock(file_obj.fileno(), fcntl_module.LOCK_UN)
+
+    return _PosixFileLockBackend
+
+
+def _create_windows_file_lock_backend(msvcrt_module):
+    class _WindowsFileLockBackend:
+        LOCK_SH = "LOCK_SH"
+        LOCK_EX = "LOCK_EX"
+        _LOCK_LENGTH = 1
+
+        @classmethod
+        def _lock(cls, file_obj, mode):
+            fd = file_obj.fileno()
+            position = file_obj.tell()
+            try:
+                file_obj.seek(0)
+                msvcrt_module.locking(fd, mode, cls._LOCK_LENGTH)
+            finally:
+                file_obj.seek(position)
+
+        @classmethod
+        def acquire(cls, file_obj, lock_type):
+            mode = (
+                msvcrt_module.LK_RLCK
+                if lock_type == cls.LOCK_SH
+                else msvcrt_module.LK_LOCK
+            )
+            cls._lock(file_obj, mode)
+
+        @classmethod
+        def release(cls, file_obj):
+            cls._lock(file_obj, msvcrt_module.LK_UNLCK)
+
+    return _WindowsFileLockBackend
+
+
+try:
+    import fcntl as _fcntl  # type: ignore
+except ImportError:  # pragma: no cover - handled by fallback
+    _fcntl = None
+
+_LOCK_BACKEND = None
+if _fcntl is not None:
+    _LOCK_BACKEND = _create_posix_file_lock_backend(_fcntl)
+else:  # pragma: no cover - exercised via unit tests
+    try:
+        import msvcrt as _msvcrt  # type: ignore
+    except ImportError as exc:  # pragma: no cover - no supported backend
+        raise RuntimeError("No supported file locking backend available") from exc
+    _LOCK_BACKEND = _create_windows_file_lock_backend(_msvcrt)
+
+LOCK_SH = _LOCK_BACKEND.LOCK_SH
+LOCK_EX = _LOCK_BACKEND.LOCK_EX
+
+
 @contextmanager
-def _locked_file(file_obj, lock_type: int):
-    fcntl.flock(file_obj.fileno(), lock_type)
+def _locked_file(file_obj, lock_type, *, _backend=None):
+    backend = _backend or _LOCK_BACKEND
+    backend.acquire(file_obj, lock_type)
     try:
         yield file_obj
     finally:
-        fcntl.flock(file_obj.fileno(), fcntl.LOCK_UN)
+        backend.release(file_obj)
 
 # ------------------ UTIL / PERSISTENCIA -------------
 def load_state() -> dict:
     if STATE_FILE.exists():
         try:
             with STATE_FILE.open("r", encoding="utf-8") as file_obj:
-                with _locked_file(file_obj, fcntl.LOCK_SH) as locked:
+                with _locked_file(file_obj, LOCK_SH) as locked:
                     size = os.fstat(locked.fileno()).st_size
                     log.debug(
                         "Loading state from %s (%s bytes)",
@@ -98,7 +166,7 @@ def save_state(state: dict, chat_id: int | None = None) -> None:
         )
         mode = "r+" if STATE_FILE.exists() else "w"
         with STATE_FILE.open(mode, encoding="utf-8") as file_obj:
-            with _locked_file(file_obj, fcntl.LOCK_EX) as locked:
+            with _locked_file(file_obj, LOCK_EX) as locked:
                 locked.seek(0)
                 locked.truncate()
                 locked.write(data)
