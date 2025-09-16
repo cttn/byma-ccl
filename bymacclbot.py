@@ -338,11 +338,32 @@ def plot_top_bottom(real_returns: pd.Series, top_n: int, bottom_n: int,
     best = rr.nlargest(top_n)
     worst = rr.nsmallest(bottom_n)
 
-    norm_pos = Normalize(vmin=float(best.min()), vmax=float(best.max()))
-    colors_pos = colormaps.get_cmap(cmap_pos)(norm_pos(best.values))
+    best_min = float(best.min())
+    best_max = float(best.max())
+    cmap_best = colormaps.get_cmap(cmap_pos)
+    if best_min == best_max:
+        log.info(
+            "plot_top_bottom uniform best returns value=%s; skipping normalization",
+            best_min,
+        )
+        colors_pos = np.tile(cmap_best(0.5), (len(best), 1))
+    else:
+        norm_pos = Normalize(vmin=best_min, vmax=best_max)
+        colors_pos = cmap_best(norm_pos(best.values))
 
-    norm_neg = Normalize(vmin=float(np.abs(worst).min()), vmax=float(np.abs(worst).max()))
-    colors_neg = colormaps.get_cmap(cmap_neg)(norm_neg(np.abs(worst.values)))
+    abs_worst = np.abs(worst)
+    worst_min = float(abs_worst.min())
+    worst_max = float(abs_worst.max())
+    cmap_worst = colormaps.get_cmap(cmap_neg)
+    if worst_min == worst_max:
+        log.info(
+            "plot_top_bottom uniform worst returns magnitude=%s; skipping normalization",
+            worst_min,
+        )
+        colors_neg = np.tile(cmap_worst(0.5), (len(worst), 1))
+    else:
+        norm_neg = Normalize(vmin=worst_min, vmax=worst_max)
+        colors_neg = cmap_worst(norm_neg(abs_worst.values))
 
     fig = plt.figure(figsize=(11.5, 8.5), dpi=150, constrained_layout=True)
     gs = fig.add_gridspec(2, 1, height_ratios=[1, 1], hspace=0.32)
