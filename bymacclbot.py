@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os, json, logging, io, asyncio
+import os, json, logging, io, asyncio, fcntl
 from datetime import datetime
 from pathlib import Path
+from contextlib import contextmanager
 
 import numpy as np
 import pandas as pd
@@ -34,15 +35,34 @@ if not isinstance(configured_level, int):
     logging.warning("Invalid LOG_LEVEL %s, defaulting to INFO", log_level)
 log = logging.getLogger("ccl-bot")
 
+# ------------------ FILE LOCKING -------------------
+@contextmanager
+def _locked_file(file_obj, lock_type: int):
+    fcntl.flock(file_obj.fileno(), lock_type)
+    try:
+        yield file_obj
+    finally:
+        fcntl.flock(file_obj.fileno(), fcntl.LOCK_UN)
+
 # ------------------ UTIL / PERSISTENCIA -------------
 def load_state() -> dict:
     if STATE_FILE.exists():
         try:
-            size = STATE_FILE.stat().st_size
-            log.debug(f"Loading state from {STATE_FILE.resolve()} ({size} bytes)")
-            data = STATE_FILE.read_text(encoding="utf-8")
+            with STATE_FILE.open("r", encoding="utf-8") as file_obj:
+                with _locked_file(file_obj, fcntl.LOCK_SH) as locked:
+                    size = os.fstat(locked.fileno()).st_size
+                    log.debug(
+                        "Loading state from %s (%s bytes)",
+                        STATE_FILE.resolve(),
+                        size,
+                    )
+                    data = locked.read()
             state = json.loads(data)
-            log.debug(f"Loaded state from {STATE_FILE.resolve()} ({len(data)} bytes)")
+            log.debug(
+                "Loaded state from %s (%s bytes)",
+                STATE_FILE.resolve(),
+                size,
+            )
             return state
         except Exception as ex:
             log.error(f"Error loading state from {STATE_FILE.resolve()}: {ex}")
@@ -53,9 +73,26 @@ def load_state() -> dict:
 def save_state(state: dict, chat_id: int | None = None) -> None:
     try:
         data = json.dumps(state, ensure_ascii=False, indent=2)
-        log.debug(f"Saving state to {STATE_FILE.resolve()} ({len(data)} bytes)")
-        STATE_FILE.write_text(data, encoding="utf-8")
-        log.debug(f"Saved state to {STATE_FILE.resolve()} ({STATE_FILE.stat().st_size} bytes)")
+        STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        log.debug(
+            "Saving state to %s (%s bytes)",
+            STATE_FILE.resolve(),
+            len(data),
+        )
+        mode = "r+" if STATE_FILE.exists() else "w"
+        with STATE_FILE.open(mode, encoding="utf-8") as file_obj:
+            with _locked_file(file_obj, fcntl.LOCK_EX) as locked:
+                locked.seek(0)
+                locked.truncate()
+                locked.write(data)
+                locked.flush()
+                os.fsync(locked.fileno())
+                final_size = os.fstat(locked.fileno()).st_size
+        log.debug(
+            "Saved state to %s (%s bytes)",
+            STATE_FILE.resolve(),
+            final_size,
+        )
     except Exception as ex:
         if chat_id is not None:
             log.error(f"Error saving state for chat_id={chat_id} to {STATE_FILE.resolve()}: {ex}")
