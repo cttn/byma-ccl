@@ -207,35 +207,90 @@ def download_ccl(start: str, end: str) -> pd.Series:
 
 def get_var(start: str, end: str) -> tuple[pd.Series, str]:
     """Retornos en USD (vía CCL) entre start y end, ordenados ascendente (%)."""
-    data = {}
-    failed = []
+    data: dict[str, pd.Series] = {}
+    failed: list[str] = []
 
-    for t in TICKERS:
+    def normalize_index(obj: pd.DataFrame | pd.Series) -> pd.DataFrame | pd.Series:
+        if isinstance(obj.index, pd.DatetimeIndex):
+            obj.index = (
+                obj.index.tz_convert("UTC").tz_localize(None)
+                if obj.index.tz is not None
+                else obj.index.tz_localize(None)
+            )
+        return obj
+
+    def mark_failed(ticker: str, reason: str) -> None:
+        if ticker not in failed:
+            log.warning(f"Fallo descargando {ticker}: {reason}")
+            failed.append(ticker)
+
+    try:
+        bulk = yf.download(
+            TICKERS,
+            start=start,
+            end=end,
+            auto_adjust=True,
+            progress=False,
+            threads=False,
+        )
+        idx = getattr(bulk, "index", None)
+        index_min = idx.min() if idx is not None and not getattr(idx, "empty", True) else None
+        index_max = idx.max() if idx is not None and not getattr(idx, "empty", True) else None
+        log.info(
+            "get_var bulk download shape=%s index_range=%s→%s",
+            getattr(bulk, "shape", None),
+            index_min,
+            index_max,
+        )
+    except (TimeoutError, requests.exceptions.RequestException, Exception) as ex:
+        log.warning("get_var descarga masiva fallida: %s", ex)
+        for ticker in TICKERS:
+            mark_failed(ticker, str(ex))
+        bulk = None
+
+    close = None
+    if isinstance(bulk, pd.DataFrame) and not bulk.empty:
         try:
-            df = yf.download([t], start=start, end=end, auto_adjust=True, progress=False)
-        except (TimeoutError, requests.exceptions.RequestException, Exception) as ex:
-            log.warning(f"Fallo descargando {t}: {ex}")
-            failed.append(t)
-            continue
+            close = bulk["Close"]
+        except KeyError:
+            close = None
+    elif isinstance(bulk, pd.Series) and not bulk.empty:
+        close = bulk
 
-        if "Close" not in df:
-            failed.append(t)
-            continue
+    if close is None or (hasattr(close, "empty") and close.empty):
+        for ticker in TICKERS:
+            mark_failed(ticker, "sin datos en descarga masiva")
+    else:
+        if isinstance(close, pd.Series):
+            name = close.name if isinstance(close.name, str) else TICKERS[0]
+            close = close.to_frame(name)
+        normalize_index(close)
+        for ticker in TICKERS:
+            if ticker not in close.columns:
+                mark_failed(ticker, "sin datos en descarga masiva")
+                continue
+            ser = close[ticker]
+            if isinstance(ser, pd.DataFrame):
+                ser = ser.iloc[:, 0]
+            if ser.dropna().empty:
+                mark_failed(ticker, "serie vacía en descarga masiva")
+                continue
+            data[ticker] = ser
 
-        ser = df["Close"][t] if isinstance(df["Close"], pd.DataFrame) else df["Close"]
-        if isinstance(ser.index, pd.DatetimeIndex):
-            ser.index = (ser.index.tz_convert('UTC').tz_localize(None)
-                         if ser.index.tz is not None else ser.index.tz_localize(None))
-        if ser.dropna().empty:
-            failed.append(t)
-            continue
-        data[t] = ser
+    failed = [ticker for ticker in failed if ticker not in data]
 
     if failed:
-        retry_fail = []
+        retry_fail: list[str] = []
         for t in failed:
             try:
-                df = yf.download([t], start=start, end=end, auto_adjust=True, progress=False, timeout=30)
+                df = yf.download(
+                    [t],
+                    start=start,
+                    end=end,
+                    auto_adjust=True,
+                    progress=False,
+                    timeout=30,
+                )
             except (TimeoutError, requests.exceptions.RequestException, Exception) as ex:
                 log.warning(f"Reintento fallido para {t}: {ex}")
                 retry_fail.append(t)
@@ -246,9 +301,7 @@ def get_var(start: str, end: str) -> tuple[pd.Series, str]:
                 continue
 
             ser = df["Close"][t] if isinstance(df["Close"], pd.DataFrame) else df["Close"]
-            if isinstance(ser.index, pd.DatetimeIndex):
-                ser.index = (ser.index.tz_convert('UTC').tz_localize(None)
-                             if ser.index.tz is not None else ser.index.tz_localize(None))
+            normalize_index(ser)
             if ser.dropna().empty:
                 retry_fail.append(t)
                 continue
