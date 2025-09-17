@@ -113,6 +113,26 @@ numpy
 
 ---
 
+## Tests
+
+Con el entorno virtual activado y las dependencias de la app instaladas, ejecutá la suite automatizada con **pytest**:
+
+```bash
+pip install -r requirements.txt      # dependencias principales del bot
+pip install pytest                   # dependencia adicional para correr los tests
+python -m pytest                     # desde la raíz del proyecto
+```
+
+La batería de pruebas cubre:
+
+- El backend de locking de archivos en Windows y POSIX para garantizar exclusión mutua consistente.
+- La normalización de índices con y sin zona horaria al calcular variaciones (`get_var`) y al graficar curvas en USD.
+- Los flujos de `plot_tickers_usd`, incluida la generación de gráficos válidos y la detección de datos insuficientes.
+
+Si todos los tests pasan vas a ver un resumen con `N passed` y un código de salida 0. Ante un fallo, pytest mostrará qué caso falló, el traceback correspondiente y devolverá un código de salida distinto de 0 para que puedas diagnosticar el problema.
+
+---
+
 ## Configuración
 
 - **Token**: variable de entorno `TELEGRAM_BOT_TOKEN` (otorgado por BotFather).  
