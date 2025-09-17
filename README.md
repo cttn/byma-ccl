@@ -99,7 +99,7 @@ source .venv/bin/activate
 pip install -U pip
 pip install -r requirements.txt
 export TELEGRAM_BOT_TOKEN="123456789:XXXXXXXXXXXX"
-python bot_ccl.py
+python bymacclbot.py
 ```
 
 `requirements.txt` recomendado:
@@ -127,7 +127,7 @@ numpy
 
 ```
 .
-├── bot_ccl.py            # bot principal
+├── bymacclbot.py         # bot principal
 ├── color_dif.py          # utilidades/experimentos de coloreo (opcional)
 ├── README.md
 ├── requirements.txt
@@ -146,7 +146,7 @@ state.json
 
 ## Personalización
 
-- **Lista de tickers**: editar la constante `TICKERS` en `bot_ccl.py`.  
+- **Lista de tickers**: editar la constante `TICKERS` en `bymacclbot.py`.
   Usar símbolos **Yahoo .BA** (p. ej., `GGAL.BA`, `TGSU2.BA`).  
   Series D/C de BYMA suelen mapear a ordinarias en Yahoo: `GGALD → GGAL.BA`, `LOMAD → LOMA.BA`, etc.
 - **CCL proxy**: por defecto `YPFD.BA / YPF`. Podés alternar a otra proxy (p. ej., `GGAL.BA/GGAL`).
@@ -167,7 +167,7 @@ After=network-online.target
 [Service]
 WorkingDirectory=/opt/bymacclbot
 Environment=TELEGRAM_BOT_TOKEN=123456789:XXXXXXXXX
-ExecStart=/opt/bymacclbot/.venv/bin/python /opt/bymacclbot/bot_ccl.py
+ExecStart=/opt/bymacclbot/.venv/bin/python /opt/bymacclbot/bymacclbot.py
 Restart=on-failure
 User=bymaccl
 Group=bymaccl
@@ -190,10 +190,10 @@ FROM python:3.11-slim
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY bot_ccl.py color_dif.py ./
+COPY bymacclbot.py color_dif.py ./
 ENV TELEGRAM_BOT_TOKEN=""
 VOLUME ["/app/state.json"]
-CMD ["python", "bot_ccl.py"]
+CMD ["python", "bymacclbot.py"]
 ```
 
 Build & run:
