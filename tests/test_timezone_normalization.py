@@ -80,5 +80,78 @@ class GetVarTimezoneNormalizationTests(unittest.TestCase):
         self.assertTrue(all(getattr(idx, "tzinfo", None) is None for idx in result.index))
 
 
+class GetVarRetryBehaviourTests(unittest.TestCase):
+    def test_retries_succeed_with_deterministic_data(self):
+        tickers = ["ALUA.BA", "BMA.BA"]
+        tz = "America/Buenos_Aires"
+        dates = pd.date_range("2024-01-01", periods=3, tz=tz)
+        df_alua = pd.DataFrame({"Close": [100.0, 110.0, 120.0]}, index=dates)
+        df_bma = pd.DataFrame({"Close": [200.0, 210.0, 220.0]}, index=dates)
+
+        dates_naive = dates.tz_convert("UTC").tz_localize(None)
+        ccl_series = pd.Series([100.0, 101.0, 102.0], index=dates_naive, name="CCL")
+
+        side_effect = [TimeoutError("boom"), df_alua.copy(), df_bma.copy()]
+
+        with patch.object(bymacclbot, "TICKERS", tickers), \
+            patch.object(
+                bymacclbot, "download_ccl", side_effect=lambda start, end: ccl_series.copy()
+            ) as mock_download_ccl, \
+            patch.object(bymacclbot.yf, "download", side_effect=side_effect) as mock_download:
+            result, message = bymacclbot.get_var("2024-01-01", "2024-01-04")
+
+        self.assertIsInstance(result, pd.Series)
+        self.assertFalse(result.empty)
+        self.assertEqual(set(result.index), set(tickers))
+        self.assertIsNone(getattr(result.index, "tz", None))
+        self.assertTrue(all(getattr(idx, "tzinfo", None) is None for idx in result.index))
+        self.assertEqual(message, "")
+
+        self.assertEqual(mock_download.call_count, 3)
+        self.assertEqual(mock_download_ccl.call_count, 1)
+
+        first_call_args, first_call_kwargs = mock_download.call_args_list[0]
+        self.assertEqual(list(first_call_args[0]), tickers)
+        self.assertEqual(first_call_kwargs["threads"], False)
+
+    def test_retries_return_empty_data_raise_runtime_error_and_report_failures(self):
+        tickers = ["ALUA.BA", "BMA.BA"]
+        tz = "America/Buenos_Aires"
+        dates = pd.date_range("2024-01-01", periods=3, tz=tz)
+        dates_naive = dates.tz_convert("UTC").tz_localize(None)
+
+        df_success = pd.DataFrame({"Close": [100.0, 105.0, 110.0]}, index=dates)
+        df_empty = pd.DataFrame({"Close": [float("nan")] * len(dates)}, index=dates)
+        ccl_series = pd.Series([100.0, 101.0, 102.0], index=dates_naive, name="CCL")
+
+        with self.subTest("todos los reintentos vacíos"):
+            side_effect = [TimeoutError("boom"), df_empty.copy(), df_empty.copy()]
+            with patch.object(bymacclbot, "TICKERS", tickers), \
+                patch.object(
+                    bymacclbot, "download_ccl", side_effect=lambda start, end: ccl_series.copy()
+                ) as mock_download_ccl, \
+                patch.object(bymacclbot.yf, "download", side_effect=side_effect) as mock_download:
+                with self.assertRaises(RuntimeError) as cm:
+                    bymacclbot.get_var("2024-01-01", "2024-01-04")
+
+            self.assertEqual(str(cm.exception), "No se pudieron descargar precios.")
+            self.assertEqual(mock_download.call_count, 3)
+            mock_download_ccl.assert_not_called()
+
+        with self.subTest("un reintento vacío mantiene el aviso"):
+            side_effect = [TimeoutError("boom"), df_success.copy(), df_empty.copy()]
+            with patch.object(bymacclbot, "TICKERS", tickers), \
+                patch.object(
+                    bymacclbot, "download_ccl", side_effect=lambda start, end: ccl_series.copy()
+                ) as mock_download_ccl, \
+                patch.object(bymacclbot.yf, "download", side_effect=side_effect) as mock_download:
+                result, message = bymacclbot.get_var("2024-01-01", "2024-01-04")
+
+            self.assertEqual(mock_download.call_count, 3)
+            self.assertEqual(mock_download_ccl.call_count, 1)
+            self.assertEqual(list(result.index), ["ALUA.BA"])
+            self.assertEqual(message, "Tickers omitidos por error de descarga: BMA")
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
