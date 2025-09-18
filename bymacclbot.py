@@ -656,23 +656,49 @@ async def cmd_ini(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("Formato: /ini YYYY-MM-DD")
         return
+    chat_id = update.effective_chat.id
     try:
         d = parse_date(context.args[0])
-        set_date(update.effective_chat.id, "start", d)
+        set_date(chat_id, "start", d)
+        log.info("cmd_ini saved chat_id=%s start=%s", chat_id, d)
         await update.message.reply_text(f"Fecha inicial guardada: {d}")
-    except Exception:
+    except ValueError:
         await update.message.reply_text("Fecha inválida. Formato: YYYY-MM-DD")
+    except Exception as ex:
+        error_id = log_exception_with_id(
+            "cmd_ini unexpected error",
+            exc=ex,
+            chat_id=chat_id,
+            command="/ini",
+            args=context.args,
+        )
+        await update.message.reply_text(
+            f"Ocurrió un error al guardar la fecha inicial. error_id={error_id}"
+        )
 
 async def cmd_fin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("Formato: /fin YYYY-MM-DD")
         return
+    chat_id = update.effective_chat.id
     try:
         d = parse_date(context.args[0])
-        set_date(update.effective_chat.id, "end", d)
+        set_date(chat_id, "end", d)
+        log.info("cmd_fin saved chat_id=%s end=%s", chat_id, d)
         await update.message.reply_text(f"Fecha final guardada: {d}")
-    except Exception:
+    except ValueError:
         await update.message.reply_text("Fecha inválida. Formato: YYYY-MM-DD")
+    except Exception as ex:
+        error_id = log_exception_with_id(
+            "cmd_fin unexpected error",
+            exc=ex,
+            chat_id=chat_id,
+            command="/fin",
+            args=context.args,
+        )
+        await update.message.reply_text(
+            f"Ocurrió un error al guardar la fecha final. error_id={error_id}"
+        )
 
 async def cmd_normalize(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
