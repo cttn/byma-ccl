@@ -82,6 +82,42 @@ class CommandHandlersTests(unittest.IsolatedAsyncioTestCase):
         )
         message.reply_text.assert_not_called()
 
+    async def test_cmd_ini_reports_save_state_error(self):
+        chat_id = 321
+        message = SimpleNamespace(reply_text=AsyncMock())
+        update = SimpleNamespace(
+            effective_chat=SimpleNamespace(id=chat_id),
+            effective_message=message,
+            message=message,
+        )
+        context = SimpleNamespace(args=["2015-01-01"])
+
+        err = OSError("disk full")
+        with patch("bymacclbot.load_state", autospec=True, return_value={}), \
+            patch(
+                "bymacclbot.save_state",
+                autospec=True,
+                side_effect=err,
+            ) as mock_save_state, \
+            patch(
+                "bymacclbot.log_exception_with_id",
+                autospec=True,
+                return_value="deadbeef",
+            ) as mock_log_exc:
+            await bymacclbot.cmd_ini(update, context)
+
+        mock_save_state.assert_called_once()
+        mock_log_exc.assert_called_once_with(
+            "cmd_ini unexpected error",
+            exc=err,
+            chat_id=chat_id,
+            command="/ini",
+            args=context.args,
+        )
+        message.reply_text.assert_awaited_once_with(
+            "Ocurrió un error al guardar la fecha inicial: disk full (error_id=deadbeef)"
+        )
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

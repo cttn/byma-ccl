@@ -237,9 +237,21 @@ def save_state(state: dict, chat_id: Optional[int] = None) -> None:
         )
     except Exception as ex:
         if chat_id is not None:
-            log.error(f"Error saving state for chat_id={chat_id} to {STATE_FILE.resolve()}: {ex}")
+            log.error(
+                "Error saving state for chat_id=%s to %s: %s",
+                chat_id,
+                STATE_FILE.resolve(),
+                ex,
+                exc_info=True,
+            )
         else:
-            log.error(f"Error saving state to {STATE_FILE.resolve()}: {ex}")
+            log.error(
+                "Error saving state to %s: %s",
+                STATE_FILE.resolve(),
+                ex,
+                exc_info=True,
+            )
+        raise
 
 def get_chat_state(chat_id: int) -> dict:
     st = load_state().get(str(chat_id), {})
@@ -776,7 +788,7 @@ async def cmd_ini(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat,
                 message,
                 context,
-                f"Ocurrió un error al guardar la fecha inicial. error_id={error_id}",
+                f"Ocurrió un error al guardar la fecha inicial: {ex} (error_id={error_id})",
             )
     except Exception as ex:  # pragma: no cover - unexpected
         log_exception_with_id(
@@ -831,7 +843,7 @@ async def cmd_fin(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat,
                 message,
                 context,
-                f"Ocurrió un error al guardar la fecha final. error_id={error_id}",
+                f"Ocurrió un error al guardar la fecha final: {ex} (error_id={error_id})",
             )
     except Exception as ex:  # pragma: no cover - unexpected
         log_exception_with_id(
@@ -858,7 +870,21 @@ async def cmd_normalize(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
         chat_id = chat.id
-        new_val = toggle_normalize(chat_id)
+        try:
+            new_val = toggle_normalize(chat_id)
+        except Exception as ex:
+            error_id = log_exception_with_id(
+                "cmd_normalize toggle error",
+                exc=ex,
+                chat_id=chat_id,
+            )
+            await _reply_text(
+                chat,
+                message,
+                context,
+                f"Error al actualizar la configuración de normalización: {ex} (error_id={error_id})",
+            )
+            return
         log.info("cmd_normalize chat_id=%s new_val=%s", chat_id, new_val)
         if new_val:
             txt = (
