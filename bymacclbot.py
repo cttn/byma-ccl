@@ -912,6 +912,13 @@ async def cmd_normalize(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_cclvars(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = None
     message = None
+    chat_id = None
+    top_n = None
+    bot_n = None
+    s = None
+    e = None
+    normalize_flag = None
+    error_context = {}
     try:
         chat = update.effective_chat
         message = update.effective_message
@@ -924,7 +931,8 @@ async def cmd_cclvars(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 getattr(chat, "id", None),
             )
 
-        if len(context.args) != 2:
+        args = getattr(context, "args", None) or []
+        if len(args) != 2:
             await _reply_text(
                 chat,
                 message,
@@ -934,8 +942,8 @@ async def cmd_cclvars(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         try:
-            top_n = int(context.args[0])
-            bot_n = int(context.args[1])
+            top_n = int(args[0])
+            bot_n = int(args[1])
         except ValueError:
             await _reply_text(
                 chat,
@@ -945,25 +953,40 @@ async def cmd_cclvars(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
+        if top_n is not None:
+            error_context["top_n"] = top_n
+        if bot_n is not None:
+            error_context["bottom_n"] = bot_n
+
         chat_id = chat.id
-        s, e = get_dates(chat_id)
-        if not s or not e:
+        if chat_id is not None:
+            error_context["chat_id"] = chat_id
+
+        try:
+            s, e = get_dates(chat_id)
+            if s is not None:
+                error_context["start"] = s
+            if e is not None:
+                error_context["end"] = e
+            if not s or not e:
+                await _reply_text(
+                    chat,
+                    message,
+                    context,
+                    "Definí primero el rango con /ini y /fin.",
+                )
+                return
+
+            normalize_flag = get_normalize(chat_id)
+            if normalize_flag is not None:
+                error_context["normalize"] = normalize_flag
+
             await _reply_text(
                 chat,
                 message,
                 context,
-                "Definí primero el rango con /ini y /fin.",
+                f"Calculando Top {top_n} / Bottom {bot_n} para {s} → {e} …",
             )
-            return
-
-        normalize_flag = get_normalize(chat_id)
-        await _reply_text(
-            chat,
-            message,
-            context,
-            f"Calculando Top {top_n} / Bottom {bot_n} para {s} → {e} …",
-        )
-        try:
             series, msg = await asyncio.to_thread(get_var, s, e)
             if series.dropna().empty:
                 await _reply_text(chat, message, context, "Sin datos para ese rango.")
@@ -988,12 +1011,7 @@ async def cmd_cclvars(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 error_id = log_exception_with_id(
                     "cmd_cclvars runtime error",
                     exc=ex,
-                    chat_id=chat_id,
-                    top_n=top_n,
-                    bottom_n=bot_n,
-                    start=s,
-                    end=e,
-                    normalize=normalize_flag,
+                    **error_context,
                 )
                 msg = f"{msg} (error_id={error_id})"
             await _reply_text(chat, message, context, msg)
@@ -1001,12 +1019,7 @@ async def cmd_cclvars(update: Update, context: ContextTypes.DEFAULT_TYPE):
             error_id = log_exception_with_id(
                 "cmd_cclvars unexpected error",
                 exc=ex,
-                chat_id=chat_id,
-                top_n=top_n,
-                bottom_n=bot_n,
-                start=s,
-                end=e,
-                normalize=normalize_flag,
+                **error_context,
             )
             await _reply_text(
                 chat,
