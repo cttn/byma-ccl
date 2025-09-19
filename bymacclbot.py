@@ -130,6 +130,62 @@ def _locked_file(file_obj, lock_type, *, _backend=None):
     finally:
         backend.release(file_obj)
 
+
+async def _reply_via(
+    chat,
+    message,
+    context,
+    *,
+    message_method: str,
+    bot_method: str,
+    args: tuple,
+    kwargs: dict,
+):
+    if message is not None:
+        reply_func = getattr(message, message_method, None)
+        if reply_func is not None:
+            return await reply_func(*args, **kwargs)
+
+    if chat is not None:
+        bot = getattr(context, "bot", None)
+        if bot is not None:
+            send_func = getattr(bot, bot_method, None)
+            if send_func is not None:
+                return await send_func(chat.id, *args, **kwargs)
+
+    log.warning(
+        "Unable to respond via %s/%s chat_id=%s message_present=%s",
+        message_method,
+        bot_method,
+        getattr(chat, "id", None),
+        message is not None,
+    )
+    return None
+
+
+async def _reply_text(chat, message, context, text: str, **kwargs):
+    return await _reply_via(
+        chat,
+        message,
+        context,
+        message_method="reply_text",
+        bot_method="send_message",
+        args=(text,),
+        kwargs=kwargs,
+    )
+
+
+async def _reply_photo(chat, message, context, *args, **kwargs):
+    return await _reply_via(
+        chat,
+        message,
+        context,
+        message_method="reply_photo",
+        bot_method="send_photo",
+        args=args,
+        kwargs=kwargs,
+    )
+
 # ------------------ UTIL / PERSISTENCIA -------------
 def load_state() -> dict:
     if STATE_FILE.exists():
@@ -646,176 +702,378 @@ def plot_tickers_usd(tickers: list[str], start: str, end: str, normalize_flag: b
 
 # ----------------------- HANDLERS --------------------
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    s, e = get_dates(update.effective_chat.id)
-    norm = get_normalize(update.effective_chat.id)
-    msg = "Comandos: /ini YYYY-MM-DD | /fin YYYY-MM-DD | /cclvars N M | /cclplot TICKER1 [TICKER2 ...] | /normalize\n"
-    msg += f"Rango actual: inicio={s or '⟂'} | fin={e or '⟂'} | normalize={norm}"
-    await update.message.reply_text(msg)
+    chat = None
+    message = None
+    try:
+        chat = update.effective_chat
+        message = update.effective_message
+        if chat is None:
+            log.warning("cmd_start invoked without effective_chat")
+            return
+        if message is None:
+            log.warning(
+                "cmd_start invoked without effective_message chat_id=%s",
+                getattr(chat, "id", None),
+            )
+
+        chat_id = chat.id
+        s, e = get_dates(chat_id)
+        norm = get_normalize(chat_id)
+        msg = (
+            "Comandos: /ini YYYY-MM-DD | /fin YYYY-MM-DD | /cclvars N M | /cclplot "
+            "TICKER1 [TICKER2 ...] | /normalize\n"
+        )
+        msg += f"Rango actual: inicio={s or '⟂'} | fin={e or '⟂'} | normalize={norm}"
+        await _reply_text(chat, message, context, msg)
+    except Exception as ex:  # pragma: no cover - unexpected
+        log_exception_with_id(
+            "cmd_start unexpected error",
+            exc=ex,
+            chat_id=getattr(chat, "id", None),
+        )
 
 async def cmd_ini(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("Formato: /ini YYYY-MM-DD")
-        return
-    chat_id = update.effective_chat.id
+    chat = None
+    message = None
     try:
-        d = parse_date(context.args[0])
-        set_date(chat_id, "start", d)
-        log.info("cmd_ini saved chat_id=%s start=%s", chat_id, d)
-        await update.message.reply_text(f"Fecha inicial guardada: {d}")
-    except ValueError:
-        await update.message.reply_text("Fecha inválida. Formato: YYYY-MM-DD")
-    except Exception as ex:
-        error_id = log_exception_with_id(
-            "cmd_ini unexpected error",
+        chat = update.effective_chat
+        message = update.effective_message
+        if chat is None:
+            log.warning("cmd_ini invoked without effective_chat")
+            return
+        if message is None:
+            log.warning(
+                "cmd_ini invoked without effective_message chat_id=%s",
+                getattr(chat, "id", None),
+            )
+
+        chat_id = chat.id
+        if not context.args:
+            await _reply_text(chat, message, context, "Formato: /ini YYYY-MM-DD")
+            return
+
+        try:
+            d = parse_date(context.args[0])
+            set_date(chat_id, "start", d)
+            log.info("cmd_ini saved chat_id=%s start=%s", chat_id, d)
+            await _reply_text(chat, message, context, f"Fecha inicial guardada: {d}")
+        except ValueError:
+            await _reply_text(
+                chat,
+                message,
+                context,
+                "Fecha inválida. Formato: YYYY-MM-DD",
+            )
+        except Exception as ex:
+            error_id = log_exception_with_id(
+                "cmd_ini unexpected error",
+                exc=ex,
+                chat_id=chat_id,
+                command="/ini",
+                args=context.args,
+            )
+            await _reply_text(
+                chat,
+                message,
+                context,
+                f"Ocurrió un error al guardar la fecha inicial. error_id={error_id}",
+            )
+    except Exception as ex:  # pragma: no cover - unexpected
+        log_exception_with_id(
+            "cmd_ini outer error",
             exc=ex,
-            chat_id=chat_id,
+            chat_id=getattr(chat, "id", None),
             command="/ini",
-            args=context.args,
-        )
-        await update.message.reply_text(
-            f"Ocurrió un error al guardar la fecha inicial. error_id={error_id}"
+            args=getattr(context, "args", None),
         )
 
 async def cmd_fin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("Formato: /fin YYYY-MM-DD")
-        return
-    chat_id = update.effective_chat.id
+    chat = None
+    message = None
     try:
-        d = parse_date(context.args[0])
-        set_date(chat_id, "end", d)
-        log.info("cmd_fin saved chat_id=%s end=%s", chat_id, d)
-        await update.message.reply_text(f"Fecha final guardada: {d}")
-    except ValueError:
-        await update.message.reply_text("Fecha inválida. Formato: YYYY-MM-DD")
-    except Exception as ex:
-        error_id = log_exception_with_id(
-            "cmd_fin unexpected error",
+        chat = update.effective_chat
+        message = update.effective_message
+        if chat is None:
+            log.warning("cmd_fin invoked without effective_chat")
+            return
+        if message is None:
+            log.warning(
+                "cmd_fin invoked without effective_message chat_id=%s",
+                getattr(chat, "id", None),
+            )
+
+        chat_id = chat.id
+        if not context.args:
+            await _reply_text(chat, message, context, "Formato: /fin YYYY-MM-DD")
+            return
+
+        try:
+            d = parse_date(context.args[0])
+            set_date(chat_id, "end", d)
+            log.info("cmd_fin saved chat_id=%s end=%s", chat_id, d)
+            await _reply_text(chat, message, context, f"Fecha final guardada: {d}")
+        except ValueError:
+            await _reply_text(
+                chat,
+                message,
+                context,
+                "Fecha inválida. Formato: YYYY-MM-DD",
+            )
+        except Exception as ex:
+            error_id = log_exception_with_id(
+                "cmd_fin unexpected error",
+                exc=ex,
+                chat_id=chat_id,
+                command="/fin",
+                args=context.args,
+            )
+            await _reply_text(
+                chat,
+                message,
+                context,
+                f"Ocurrió un error al guardar la fecha final. error_id={error_id}",
+            )
+    except Exception as ex:  # pragma: no cover - unexpected
+        log_exception_with_id(
+            "cmd_fin outer error",
             exc=ex,
-            chat_id=chat_id,
+            chat_id=getattr(chat, "id", None),
             command="/fin",
-            args=context.args,
-        )
-        await update.message.reply_text(
-            f"Ocurrió un error al guardar la fecha final. error_id={error_id}"
+            args=getattr(context, "args", None),
         )
 
 async def cmd_normalize(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-    new_val = toggle_normalize(chat_id)
-    log.info("cmd_normalize chat_id=%s new_val=%s", chat_id, new_val)
-    if new_val:
-        txt = ("Normalización: ON\n"
-               "Desde ahora TODOS los gráficos se devuelven normalizados con base **100** en la fecha inicial.\n"
-               "- /cclplot: línea índice (100=ini).\n"
-               "- /cclvars: rendimientos relativos; el gráfico aclara Base 100=ini.")
-    else:
-        txt = ("Normalización: OFF\n"
-               "Desde ahora los gráficos NO se normalizan.\n"
-               "- /cclplot: precio en USD (vía CCL) absoluto.\n"
-               "- /cclvars: rendimientos relativos en % (sin base 100 en el título).")
-    log.debug("cmd_normalize response chat_id=%s text=%r", chat_id, txt)
-    await update.message.reply_text(txt, disable_web_page_preview=True)
+    chat = None
+    message = None
+    try:
+        chat = update.effective_chat
+        message = update.effective_message
+        if chat is None:
+            log.warning("cmd_normalize invoked without effective_chat")
+            return
+        if message is None:
+            log.warning(
+                "cmd_normalize invoked without effective_message chat_id=%s",
+                getattr(chat, "id", None),
+            )
+
+        chat_id = chat.id
+        new_val = toggle_normalize(chat_id)
+        log.info("cmd_normalize chat_id=%s new_val=%s", chat_id, new_val)
+        if new_val:
+            txt = (
+                "Normalización: ON\n"
+                "Desde ahora TODOS los gráficos se devuelven normalizados con base **100** en la fecha inicial.\n"
+                "- /cclplot: línea índice (100=ini).\n"
+                "- /cclvars: rendimientos relativos; el gráfico aclara Base 100=ini."
+            )
+        else:
+            txt = (
+                "Normalización: OFF\n"
+                "Desde ahora los gráficos NO se normalizan.\n"
+                "- /cclplot: precio en USD (vía CCL) absoluto.\n"
+                "- /cclvars: rendimientos relativos en % (sin base 100 en el título)."
+            )
+        log.debug("cmd_normalize response chat_id=%s text=%r", chat_id, txt)
+        await _reply_text(chat, message, context, txt, disable_web_page_preview=True)
+    except Exception as ex:  # pragma: no cover - unexpected
+        log_exception_with_id(
+            "cmd_normalize unexpected error",
+            exc=ex,
+            chat_id=getattr(chat, "id", None),
+        )
 
 async def cmd_cclvars(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if len(context.args) != 2:
-        await update.message.reply_text("Uso: /cclvars <top_n> <bottom_n> (ej: /cclvars 15 20)")
-        return
+    chat = None
+    message = None
     try:
-        top_n = int(context.args[0])
-        bot_n = int(context.args[1])
-    except ValueError:
-        await update.message.reply_text("Los dos parámetros deben ser enteros.")
-        return
-
-    s, e = get_dates(update.effective_chat.id)
-    if not s or not e:
-        await update.message.reply_text("Definí primero el rango con /ini y /fin.")
-        return
-
-    normalize_flag = get_normalize(update.effective_chat.id)
-    # Enviamos primero la respuesta al usuario antes de los cálculos pesados
-    await update.message.reply_text(
-        f"Calculando Top {top_n} / Bottom {bot_n} para {s} → {e} …"
-    )
-    try:
-        # Ejecutamos tareas de cálculo en un hilo aparte para no bloquear el loop
-        series, msg = await asyncio.to_thread(get_var, s, e)
-        if series.dropna().empty:
-            await update.message.reply_text("Sin datos para ese rango.")
-            if msg:
-                await update.message.reply_text(msg)
+        chat = update.effective_chat
+        message = update.effective_message
+        if chat is None:
+            log.warning("cmd_cclvars invoked without effective_chat")
             return
-        img = await asyncio.to_thread(
-            plot_top_bottom, series, top_n, bot_n, s, e, normalize_flag
+        if message is None:
+            log.warning(
+                "cmd_cclvars invoked without effective_message chat_id=%s",
+                getattr(chat, "id", None),
+            )
+
+        if len(context.args) != 2:
+            await _reply_text(
+                chat,
+                message,
+                context,
+                "Uso: /cclvars <top_n> <bottom_n> (ej: /cclvars 15 20)",
+            )
+            return
+
+        try:
+            top_n = int(context.args[0])
+            bot_n = int(context.args[1])
+        except ValueError:
+            await _reply_text(
+                chat,
+                message,
+                context,
+                "Los dos parámetros deben ser enteros.",
+            )
+            return
+
+        chat_id = chat.id
+        s, e = get_dates(chat_id)
+        if not s or not e:
+            await _reply_text(
+                chat,
+                message,
+                context,
+                "Definí primero el rango con /ini y /fin.",
+            )
+            return
+
+        normalize_flag = get_normalize(chat_id)
+        await _reply_text(
+            chat,
+            message,
+            context,
+            f"Calculando Top {top_n} / Bottom {bot_n} para {s} → {e} …",
         )
-        await update.message.reply_photo(img, caption=f"Top/Bottom {s} → {e}")
-        if msg:
-            await update.message.reply_text(msg)
-    except RuntimeError as ex:
-        msg = str(ex)
-        if "error_id=" not in msg:
+        try:
+            series, msg = await asyncio.to_thread(get_var, s, e)
+            if series.dropna().empty:
+                await _reply_text(chat, message, context, "Sin datos para ese rango.")
+                if msg:
+                    await _reply_text(chat, message, context, msg)
+                return
+            img = await asyncio.to_thread(
+                plot_top_bottom, series, top_n, bot_n, s, e, normalize_flag
+            )
+            await _reply_photo(
+                chat,
+                message,
+                context,
+                img,
+                caption=f"Top/Bottom {s} → {e}",
+            )
+            if msg:
+                await _reply_text(chat, message, context, msg)
+        except RuntimeError as ex:
+            msg = str(ex)
+            if "error_id=" not in msg:
+                error_id = log_exception_with_id(
+                    "cmd_cclvars runtime error",
+                    exc=ex,
+                    chat_id=chat_id,
+                    top_n=top_n,
+                    bottom_n=bot_n,
+                    start=s,
+                    end=e,
+                    normalize=normalize_flag,
+                )
+                msg = f"{msg} (error_id={error_id})"
+            await _reply_text(chat, message, context, msg)
+        except Exception as ex:
             error_id = log_exception_with_id(
-                "cmd_cclvars runtime error",
+                "cmd_cclvars unexpected error",
                 exc=ex,
-                chat_id=update.effective_chat.id,
+                chat_id=chat_id,
                 top_n=top_n,
                 bottom_n=bot_n,
                 start=s,
                 end=e,
                 normalize=normalize_flag,
             )
-            msg = f"{msg} (error_id={error_id})"
-        await update.message.reply_text(msg)
-    except Exception as ex:
-        error_id = log_exception_with_id(
-            "cmd_cclvars unexpected error",
+            await _reply_text(
+                chat,
+                message,
+                context,
+                f"Error al generar gráfico: {ex} (error_id={error_id})",
+            )
+    except Exception as ex:  # pragma: no cover - unexpected
+        log_exception_with_id(
+            "cmd_cclvars outer error",
             exc=ex,
-            chat_id=update.effective_chat.id,
-            top_n=top_n,
-            bottom_n=bot_n,
-            start=s,
-            end=e,
-            normalize=normalize_flag,
-        )
-        await update.message.reply_text(
-            f"Error al generar gráfico: {ex} (error_id={error_id})"
+            chat_id=getattr(chat, "id", None),
+            args=getattr(context, "args", None),
         )
 
 async def cmd_cclplot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if len(context.args) < 1:
-        await update.message.reply_text("Uso: /cclplot <TICKER1> [TICKER2 …]")
-        return
-
-    chat_id = update.effective_chat.id
-    s, e = get_dates(chat_id)
-    if not s or not e:
-        await update.message.reply_text("Definí primero el rango con /ini y /fin.")
-        return
-
-    tickers = context.args
-    tickers_norm = [norm_ticker_ba(t).upper() for t in tickers]
-    tickers_str = ", ".join(tickers_norm)
-    normalize_flag = get_normalize(chat_id)
-    ctx_info = (f"chat_id={chat_id} tickers={tickers_norm} "
-                f"start={s} end={e} normalize={normalize_flag}")
-    log.info(f"cmd_cclplot start {ctx_info}")
-    await update.message.reply_text(f"Graficando {tickers_str} para {s} → {e} …")
+    chat = None
+    message = None
     try:
-        log.info(f"cmd_cclplot to_thread start {ctx_info}")
-        img = await asyncio.to_thread(plot_tickers_usd, tickers, s, e, normalize_flag)
-        size = img.getbuffer().nbytes if hasattr(img, "getbuffer") else None
-        if size is not None:
-            log.info(f"cmd_cclplot to_thread done {ctx_info} size={size}")
-        else:
-            log.info(f"cmd_cclplot to_thread done {ctx_info}")
-        await update.message.reply_photo(img, caption=f"{tickers_str} – {s} → {e}")
-        log.info(f"cmd_cclplot response sent {ctx_info}")
-    except RuntimeError as ex:
-        msg = str(ex)
-        if "error_id=" not in msg:
+        chat = update.effective_chat
+        message = update.effective_message
+        if chat is None:
+            log.warning("cmd_cclplot invoked without effective_chat")
+            return
+        if message is None:
+            log.warning(
+                "cmd_cclplot invoked without effective_message chat_id=%s",
+                getattr(chat, "id", None),
+            )
+
+        if len(context.args) < 1:
+            await _reply_text(chat, message, context, "Uso: /cclplot <TICKER1> [TICKER2 …]")
+            return
+
+        chat_id = chat.id
+        s, e = get_dates(chat_id)
+        if not s or not e:
+            await _reply_text(
+                chat,
+                message,
+                context,
+                "Definí primero el rango con /ini y /fin.",
+            )
+            return
+
+        tickers = context.args
+        tickers_norm = [norm_ticker_ba(t).upper() for t in tickers]
+        tickers_str = ", ".join(tickers_norm)
+        normalize_flag = get_normalize(chat_id)
+        ctx_info = (
+            f"chat_id={chat_id} tickers={tickers_norm} start={s} end={e} "
+            f"normalize={normalize_flag}"
+        )
+        log.info(f"cmd_cclplot start {ctx_info}")
+        await _reply_text(
+            chat,
+            message,
+            context,
+            f"Graficando {tickers_str} para {s} → {e} …",
+        )
+        try:
+            log.info(f"cmd_cclplot to_thread start {ctx_info}")
+            img = await asyncio.to_thread(plot_tickers_usd, tickers, s, e, normalize_flag)
+            size = img.getbuffer().nbytes if hasattr(img, "getbuffer") else None
+            if size is not None:
+                log.info(f"cmd_cclplot to_thread done {ctx_info} size={size}")
+            else:
+                log.info(f"cmd_cclplot to_thread done {ctx_info}")
+            await _reply_photo(
+                chat,
+                message,
+                context,
+                img,
+                caption=f"{tickers_str} – {s} → {e}",
+            )
+            log.info(f"cmd_cclplot response sent {ctx_info}")
+        except RuntimeError as ex:
+            msg = str(ex)
+            if "error_id=" not in msg:
+                error_id = log_exception_with_id(
+                    "cmd_cclplot runtime error",
+                    exc=ex,
+                    chat_id=chat_id,
+                    tickers=tickers_norm,
+                    start=s,
+                    end=e,
+                    normalize=normalize_flag,
+                )
+                msg = f"{msg} (error_id={error_id})"
+            await _reply_text(chat, message, context, msg)
+        except Exception as ex:
             error_id = log_exception_with_id(
-                "cmd_cclplot runtime error",
+                "cmd_cclplot unexpected error",
                 exc=ex,
                 chat_id=chat_id,
                 tickers=tickers_norm,
@@ -823,20 +1081,18 @@ async def cmd_cclplot(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 end=e,
                 normalize=normalize_flag,
             )
-            msg = f"{msg} (error_id={error_id})"
-        await update.message.reply_text(msg)
-    except Exception as ex:
-        error_id = log_exception_with_id(
-            "cmd_cclplot unexpected error",
+            await _reply_text(
+                chat,
+                message,
+                context,
+                f"Error al graficar {tickers_str}: {ex} (error_id={error_id})",
+            )
+    except Exception as ex:  # pragma: no cover - unexpected
+        log_exception_with_id(
+            "cmd_cclplot outer error",
             exc=ex,
-            chat_id=chat_id,
-            tickers=tickers_norm,
-            start=s,
-            end=e,
-            normalize=normalize_flag,
-        )
-        await update.message.reply_text(
-            f"Error al graficar {tickers_str}: {ex} (error_id={error_id})"
+            chat_id=getattr(chat, "id", None),
+            args=getattr(context, "args", None),
         )
 
 # ------------------------- MAIN ---------------------
