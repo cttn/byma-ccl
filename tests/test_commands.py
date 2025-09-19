@@ -118,6 +118,48 @@ class CommandHandlersTests(unittest.IsolatedAsyncioTestCase):
             "Ocurrió un error al guardar la fecha inicial: disk full (error_id=deadbeef)"
         )
 
+    async def test_cmd_cclvars_uses_default_args_when_missing(self):
+        chat_id = 101
+        message = SimpleNamespace(reply_text=AsyncMock())
+        update = SimpleNamespace(
+            effective_chat=SimpleNamespace(id=chat_id),
+            effective_message=message,
+            message=message,
+        )
+        context = SimpleNamespace(args=None)
+
+        await bymacclbot.cmd_cclvars(update, context)
+
+        message.reply_text.assert_awaited_once_with(
+            "Uso: /cclvars <top_n> <bottom_n> (ej: /cclvars 15 20)"
+        )
+
+    async def test_cmd_cclvars_logs_and_reports_error_when_get_dates_fails(self):
+        chat_id = 202
+        message = SimpleNamespace(reply_text=AsyncMock())
+        update = SimpleNamespace(
+            effective_chat=SimpleNamespace(id=chat_id),
+            effective_message=message,
+            message=message,
+        )
+        context = SimpleNamespace(args=["10", "5"])
+
+        err = ValueError("boom")
+        with patch("bymacclbot.get_dates", autospec=True, side_effect=err), \
+            patch("bymacclbot.log_exception_with_id", autospec=True, return_value="cafebabe") as mock_log:
+            await bymacclbot.cmd_cclvars(update, context)
+
+        mock_log.assert_called_once_with(
+            "cmd_cclvars unexpected error",
+            exc=err,
+            top_n=10,
+            bottom_n=5,
+            chat_id=chat_id,
+        )
+        message.reply_text.assert_awaited_once_with(
+            "Error al generar gráfico: boom (error_id=cafebabe)"
+        )
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
